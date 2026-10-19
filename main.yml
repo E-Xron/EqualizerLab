@@ -1,0 +1,77 @@
+name: Build plugins
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: EqualizerLab-Windows
+          - os: macos-latest
+            name: EqualizerLab-Mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        shell: bash
+        run: |
+          SRC=$(dirname "$(find . -name CMakeLists.txt -not -path './build/*' | head -n 1)")
+          echo "Project folder: $SRC"
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cmake -S "$SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCOPY_AFTER_BUILD=OFF \
+              -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          else
+            cmake -S "$SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCOPY_AFTER_BUILD=OFF
+          fi
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Package
+        shell: bash
+        run: |
+          ART="$(find build -type d -name EqualizerLab_artefacts | head -n 1)/Release"
+          echo "Artefacts: $ART"; ls "$ART"
+          mkdir -p dist
+          cp -R "$ART/VST3/EqualizerLab.vst3" dist/
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cp -R "$ART/AU/EqualizerLab.component" dist/
+            cp -R "$ART/Standalone/EqualizerLab.app" dist/
+            for b in dist/EqualizerLab.vst3 dist/EqualizerLab.component dist/EqualizerLab.app; do codesign --force --deep -s - "$b"; done
+            printf '%s\n' \
+              "EqualizerLab.vst3      -> /Library/Audio/Plug-Ins/VST3   (Ableton, FL Studio, Cubase, Studio One, Reaper, Bitwig)" \
+              "EqualizerLab.component -> /Library/Audio/Plug-Ins/Components   (Logic Pro, GarageBand, also Ableton/Reaper)" \
+              "EqualizerLab.app       -> Applications (runs without a DAW)" \
+              "If macOS blocks it: System Settings > Privacy & Security > Open Anyway, or run" \
+              "  xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/Components/EqualizerLab.component" > dist/INSTALL.txt
+            tar -czf "${{ matrix.name }}.tar.gz" -C dist .
+            rm -rf dist && mkdir dist && mv "${{ matrix.name }}.tar.gz" dist/
+          else
+            cp "$ART/Standalone/EqualizerLab.exe" dist/
+            printf '%s\r\n' \
+              "EqualizerLab.vst3 (the whole folder) -> C:\Program Files\Common Files\VST3" \
+              "Works in Ableton, FL Studio, Cubase, Studio One, Reaper, Bitwig and other VST3 hosts." \
+              "EqualizerLab.exe runs without a DAW." > dist/INSTALL.txt
+          fi
+
+      - name: Validate AU (Logic compatibility)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        shell: bash
+        run: |
+          ART="$(find build -type d -name EqualizerLab_artefacts | head -n 1)/Release"
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$ART/AU/EqualizerLab.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          auval -v aufx Eql1 Yrnm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/
